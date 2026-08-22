@@ -33,7 +33,7 @@ if api_key:
 
 MODEL = os.getenv(
     "GEMINI_MODEL",
-    "gemini-2.5-flash-lite"
+    "gemini-3.5-flash-lite"
 )
 
 
@@ -300,12 +300,18 @@ DOCUMENT:
 Generate the summary now.
 """
 
-    response = client.interactions.create(
+    # Correct Google Gemini API call
+    response = client.models.generate_content(
         model=MODEL,
-        input=prompt
+        contents=prompt
     )
 
-    return response.output_text
+    if not response.text:
+        raise RuntimeError(
+            "Gemini returned an empty response."
+        )
+
+    return response.text
 
 
 # --------------------------------------------------

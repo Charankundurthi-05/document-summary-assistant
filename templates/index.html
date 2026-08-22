@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Document Summary Assistant</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6fb;
+            color: #172033;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1000px;
+            margin: 50px auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            margin-bottom: 10px;
+            font-size: 36px;
+        }
+
+        .header p {
+            color: #667085;
+            font-size: 16px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 18px;
+            padding: 30px;
+            margin-bottom: 25px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+        }
+
+        .upload-box {
+            border: 2px dashed #8d91a8;
+            border-radius: 15px;
+            padding: 55px 25px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .upload-box:hover {
+            border-color: #4f46e5;
+            background: #f8f8ff;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .upload-box h2 {
+            margin: 10px 0;
+        }
+
+        .upload-box p {
+            color: #667085;
+            margin: 7px 0;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        #fileName {
+            margin-top: 18px;
+            font-weight: bold;
+            color: #4f46e5;
+            word-break: break-word;
+        }
+
+        .label {
+            display: block;
+            margin: 20px 0 8px;
+            font-weight: bold;
+        }
+
+        select {
+            width: 100%;
+            padding: 14px;
+            border: 1px solid #d0d5dd;
+            border-radius: 10px;
+            font-size: 16px;
+            background: white;
+        }
+
+        button {
+            width: 100%;
+            margin-top: 25px;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            background: #4f46e5;
+            color: white;
+            font-size: 17px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        button:hover {
+            background: #4338ca;
+        }
+
+        button:disabled {
+            background: #a5a6c8;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+            color: #4f46e5;
+            font-weight: bold;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 3px solid #ddd;
+            border-top: 3px solid #4f46e5;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .result {
+            display: none;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .result-header h2 {
+            margin: 0;
+        }
+
+        .badge {
+            padding: 7px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .badge-ai {
+            background: #e7f7ed;
+            color: #147a3e;
+        }
+
+        .badge-local {
+            background: #fff4d6;
+            color: #8a5a00;
+        }
+
+        .summary {
+            background: #f8f9fc;
+            border-left: 4px solid #4f46e5;
+            border-radius: 10px;
+            padding: 25px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            font-size: 16px;
+        }
+
+        .error {
+            display: none;
+            background: #fff0f0;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+
+        .footer {
+            text-align: center;
+            color: #98a2b3;
+            font-size: 13px;
+            margin-top: 30px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                width: 94%;
+                margin: 25px auto;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 28px;
+            }
+
+            .result-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="header">
+        <h1>📄 Document Summary Assistant</h1>
+        <p>
+            Upload a PDF and generate a concise, structured summary.
+        </p>
+    </div>
+
+    <div class="card">
+
+        <form id="summaryForm">
+
+            <label for="fileInput">
+
+                <div class="upload-box">
+
+                    <div class="upload-icon">📁</div>
+
+                    <h2>Upload your document</h2>
+
+                    <p>Click here to select a PDF document</p>
+
+                    <p>Supported format: PDF</p>
+
+                    <div id="fileName"></div>
+
+                </div>
+
+            </label>
+
+            <input
+                type="file"
+                id="fileInput"
+                name="file"
+                accept=".pdf"
+                required
+            >
+
+            <label class="label" for="summaryType">
+                Summary Length
+            </label>
+
+            <select
+                id="summaryType"
+                name="summary_type"
+            >
+                <option value="short">Short</option>
+                <option value="detailed" selected>Medium / Detailed</option>
+                <option value="bullet">Bullet Points</option>
+            </select>
+
+            <button
+                type="submit"
+                id="submitButton"
+            >
+                Generate Summary
+            </button>
+
+        </form>
+
+        <div class="loading" id="loading">
+
+            <span class="spinner"></span>
+
+            Analyzing document...
+
+        </div>
+
+        <div class="error" id="error"></div>
+
+    </div>
+
+
+    <div class="card result" id="result">
+
+        <div class="result-header">
+
+            <h2>📋 Document Summary</h2>
+
+            <span
+                class="badge"
+                id="methodBadge"
+            ></span>
+
+        </div>
+
+        <div
+            class="summary"
+            id="summary"
+        ></div>
+
+    </div>
+
+
+    <div class="footer">
+
+        Document Summary Assistant • Flask + Python + PDF Processing + AI
+
+    </div>
+
+</div>
+
+
+<script>
+
+    const form = document.getElementById("summaryForm");
+
+    const fileInput = document.getElementById("fileInput");
+
+    const fileName = document.getElementById("fileName");
+
+    const submitButton =
+        document.getElementById("submitButton");
+
+    const loading =
+        document.getElementById("loading");
+
+    const result =
+        document.getElementById("result");
+
+    const summary =
+        document.getElementById("summary");
+
+    const error =
+        document.getElementById("error");
+
+    const methodBadge =
+        document.getElementById("methodBadge");
+
+
+    fileInput.addEventListener("change", function () {
+
+        if (fileInput.files.length > 0) {
+
+            fileName.textContent =
+                "Selected: " +
+                fileInput.files[0].name;
+
+        } else {
+
+            fileName.textContent = "";
+
+        }
+
+    });
+
+
+    form.addEventListener("submit", async function (event) {
+
+        event.preventDefault();
+
+        error.style.display = "none";
+
+        result.style.display = "none";
+
+        loading.style.display = "block";
+
+        submitButton.disabled = true;
+
+        submitButton.textContent = "Processing...";
+
+
+        const formData = new FormData(form);
+
+
+        try {
+
+            const response = await fetch(
+                "/summarize",
+                {
+                    method: "POST",
+                    body: formData
+                }
+            );
+
+
+            const data = await response.json();
+
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.error ||
+                    "Something went wrong."
+                );
+
+            }
+
+
+            summary.textContent =
+                data.summary;
+
+
+            if (data.method === "AI") {
+
+                methodBadge.textContent =
+                    "✨ AI Generated";
+
+                methodBadge.className =
+                    "badge badge-ai";
+
+            } else {
+
+                methodBadge.textContent =
+                    "⚡ Local Summary";
+
+                methodBadge.className =
+                    "badge badge-local";
+
+            }
+
+
+            result.style.display = "block";
+
+
+            result.scrollIntoView({
+                behavior: "smooth"
+            });
+
+
+        } catch (err) {
+
+            error.textContent =
+                "Error: " + err.message;
+
+            error.style.display = "block";
+
+        } finally {
+
+            loading.style.display = "none";
+
+            submitButton.disabled = false;
+
+            submitButton.textContent =
+                "Generate Summary";
+
+        }
+
+    });
+
+</script>
+
+</body>
+</html>

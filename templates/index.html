@@ -412,22 +412,82 @@
             );
 
 
-            const data = await response.json();
+            /*
+             * Check the response before trying to parse JSON.
+             *
+             * This prevents:
+             * Unexpected token '<', "<html>"...
+             *
+             * which happens when the server returns an HTML
+             * error page instead of JSON.
+             */
+
+            const contentType =
+                response.headers.get("content-type") || "";
+
+            let data;
 
 
-            if (!data.success) {
+            if (contentType.includes("application/json")) {
+
+                data = await response.json();
+
+            } else {
+
+                const text = await response.text();
+
+                console.error(
+                    "Server returned non-JSON response:",
+                    text
+                );
 
                 throw new Error(
-                    data.error ||
-                    "Something went wrong."
+                    "The server returned an unexpected response. Please try again in a few seconds."
                 );
 
             }
 
 
+            /*
+             * Handle HTTP errors.
+             */
+
+            if (!response.ok) {
+
+                throw new Error(
+                    data.error ||
+                    "Server error: " + response.status
+                );
+
+            }
+
+
+            /*
+             * Handle application-level errors.
+             */
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.error ||
+                    "Unable to generate the summary."
+                );
+
+            }
+
+
+            /*
+             * Display summary.
+             */
+
             summary.textContent =
                 data.summary;
 
+
+            /*
+             * Display whether Gemini AI or
+             * the local summarizer was used.
+             */
 
             if (data.method === "AI") {
 
@@ -458,10 +518,16 @@
 
         } catch (err) {
 
+            console.error(
+                "Summary generation error:",
+                err
+            );
+
             error.textContent =
                 "Error: " + err.message;
 
             error.style.display = "block";
+
 
         } finally {
 

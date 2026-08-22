@@ -6,7 +6,7 @@ from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 from pypdf import PdfReader
-from openai import OpenAI
+from google import genai
 
 load_dotenv()
 
@@ -19,29 +19,48 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-api_key = os.getenv("OPENAI_API_KEY")
+
+# --------------------------------------------------
+# Gemini Configuration
+# --------------------------------------------------
+
+api_key = os.getenv("GEMINI_API_KEY")
 
 client = None
 
 if api_key:
-    client = OpenAI(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
-MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
+MODEL = os.getenv(
+    "GEMINI_MODEL",
+    "gemini-2.5-flash-lite"
+)
 
+
+# --------------------------------------------------
+# File Validation
+# --------------------------------------------------
 
 def allowed_file(filename):
     return (
         "." in filename
-        and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+        and filename.rsplit(".", 1)[1].lower()
+        in ALLOWED_EXTENSIONS
     )
 
 
+# --------------------------------------------------
+# PDF Text Extraction
+# --------------------------------------------------
+
 def extract_text_from_pdf(filepath):
+
     reader = PdfReader(filepath)
 
     text = ""
 
     for page in reader.pages:
+
         page_text = page.extract_text()
 
         if page_text:
@@ -50,8 +69,17 @@ def extract_text_from_pdf(filepath):
     return text.strip()
 
 
+# --------------------------------------------------
+# Sentence Processing
+# --------------------------------------------------
+
 def split_into_sentences(text):
-    text = re.sub(r"\s+", " ", text).strip()
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
 
     sentences = re.split(
         r"(?<=[.!?])\s+",
@@ -65,14 +93,11 @@ def split_into_sentences(text):
     ]
 
 
-def local_summary(text, summary_type="detailed"):
-    """
-    Local extractive summarizer.
+# --------------------------------------------------
+# Local Fallback Summarizer
+# --------------------------------------------------
 
-    It does not generate new information.
-    It selects important sentences directly from
-    the uploaded document.
-    """
+def local_summary(text, summary_type="detailed"):
 
     sentences = split_into_sentences(text)
 
@@ -91,10 +116,14 @@ def local_summary(text, summary_type="detailed"):
         "does", "did", "not", "than", "also", "such"
     }
 
-    words = re.findall(r"\b[a-zA-Z]{3,}\b", text.lower())
+    words = re.findall(
+        r"\b[a-zA-Z]{3,}\b",
+        text.lower()
+    )
 
     word_counts = Counter(
-        word for word in words
+        word
+        for word in words
         if word not in stop_words
     )
 
@@ -102,6 +131,20 @@ def local_summary(text, summary_type="detailed"):
         return "\n".join(sentences[:5])
 
     scored_sentences = []
+
+    important_terms = [
+        "important",
+        "conclusion",
+        "result",
+        "objective",
+        "method",
+        "finding",
+        "key",
+        "significant",
+        "therefore",
+        "finally",
+        "summary"
+    ]
 
     for index, sentence in enumerate(sentences):
 
@@ -121,25 +164,10 @@ def local_summary(text, summary_type="detailed"):
 
         score = score / len(sentence_words)
 
-        # Give slightly higher priority to sentences
-        # containing important structural keywords.
-        important_terms = [
-            "important",
-            "conclusion",
-            "result",
-            "objective",
-            "method",
-            "finding",
-            "key",
-            "significant",
-            "therefore",
-            "finally",
-            "summary"
-        ]
-
         lower_sentence = sentence.lower()
 
         for term in important_terms:
+
             if term in lower_sentence:
                 score += 1.5
 
@@ -153,26 +181,30 @@ def local_summary(text, summary_type="detailed"):
     )
 
     if summary_type == "short":
+
         number_of_sentences = min(
             5,
             len(sentences)
         )
 
     elif summary_type == "bullet":
+
         number_of_sentences = min(
             8,
             len(sentences)
         )
 
     else:
+
         number_of_sentences = min(
             12,
             len(sentences)
         )
 
-    selected = scored_sentences[:number_of_sentences]
+    selected = scored_sentences[
+        :number_of_sentences
+    ]
 
-    # Restore original document order.
     selected.sort(
         key=lambda x: x[1]
     )
@@ -189,14 +221,24 @@ def local_summary(text, summary_type="detailed"):
             for sentence in selected_sentences
         )
 
-    return " ".join(selected_sentences)
+    return " ".join(
+        selected_sentences
+    )
 
 
-def summarize_with_openai(text, summary_type="detailed"):
+# --------------------------------------------------
+# Gemini AI Summarizer
+# --------------------------------------------------
+
+def summarize_with_gemini(
+    text,
+    summary_type="detailed"
+):
 
     if not client:
+
         raise RuntimeError(
-            "OpenAI API key is not configured."
+            "Gemini API key is not configured."
         )
 
     if summary_type == "short":
@@ -238,12 +280,15 @@ Use the following structure:
 3. Important Details
 4. Conclusions
 
-Preserve important names, numbers, dates, definitions and technical terms.
-Do not invent information that is not present in the document.
+Preserve important names, numbers, dates,
+definitions and technical terms.
+
+Do not invent information that is not
+present in the document.
 """
 
     prompt = f"""
-You are a document summarization assistant.
+You are a professional document summarization assistant.
 
 {instruction}
 
@@ -251,9 +296,11 @@ DOCUMENT:
 --------------------
 {text}
 --------------------
+
+Generate the summary now.
 """
 
-    response = client.responses.create(
+    response = client.interactions.create(
         model=MODEL,
         input=prompt
     )
@@ -261,19 +308,28 @@ DOCUMENT:
     return response.output_text
 
 
-def summarize_document(text, summary_type="detailed"):
+# --------------------------------------------------
+# Main Summarization Function
+# --------------------------------------------------
+
+def summarize_document(
+    text,
+    summary_type="detailed"
+):
 
     if not text.strip():
+
         raise ValueError(
             "No readable text was found in the PDF."
         )
 
-    # Try AI summarization first.
+    # Try Gemini first.
+
     if client:
 
         try:
 
-            summary = summarize_with_openai(
+            summary = summarize_with_gemini(
                 text,
                 summary_type
             )
@@ -283,16 +339,17 @@ def summarize_document(text, summary_type="detailed"):
         except Exception as e:
 
             print(
-                "OpenAI API unavailable. "
-                "Using local summarizer."
+                "Gemini API unavailable."
+                " Using local summarizer."
             )
 
             print(
-                "API error:",
+                "Gemini API error:",
                 str(e)
             )
 
     # Local fallback.
+
     summary = local_summary(
         text,
         summary_type
@@ -300,6 +357,10 @@ def summarize_document(text, summary_type="detailed"):
 
     return summary, "Local"
 
+
+# --------------------------------------------------
+# Home Page
+# --------------------------------------------------
 
 @app.route("/")
 def home():
@@ -309,7 +370,14 @@ def home():
     )
 
 
-@app.route("/summarize", methods=["POST"])
+# --------------------------------------------------
+# Summarize Endpoint
+# --------------------------------------------------
+
+@app.route(
+    "/summarize",
+    methods=["POST"]
+)
 def summarize():
 
     try:
@@ -400,7 +468,14 @@ def summarize():
         }), 500
 
 
-@app.route("/api/health", methods=["GET"])
+# --------------------------------------------------
+# Health Check
+# --------------------------------------------------
+
+@app.route(
+    "/api/health",
+    methods=["GET"]
+)
 def health():
 
     return jsonify({
@@ -409,14 +484,28 @@ def health():
 
         "service": "Document Summary Assistant",
 
-        "ai_api_available": client is not None
+        "ai_api_available": client is not None,
+
+        "ai_provider": "Google Gemini",
+
+        "model": MODEL
 
     })
 
 
+# --------------------------------------------------
+# Run Application
+# --------------------------------------------------
+
 if __name__ == "__main__":
+
     app.run(
         debug=True,
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000))
+        port=int(
+            os.environ.get(
+                "PORT",
+                5000
+            )
+        )
     )
